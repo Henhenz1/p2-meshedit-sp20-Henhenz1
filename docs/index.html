@@ -1,0 +1,297 @@
+﻿<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+<head>
+<style>
+  body {
+    padding: 100px;
+    width: 1000px;
+    margin: auto;
+    text-align: left;
+    font-weight: 300;
+    font-family: 'Open Sans', sans-serif;
+    color: #121212;
+  }
+  h1, h2, h3, h4 {
+    font-family: 'Source Sans Pro', sans-serif;
+  }
+</style>
+<title>CS 184 Mesh Editor</title>
+<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+<link href="https://fonts.googleapis.com/css?family=Open+Sans|Source+Sans+Pro" rel="stylesheet">
+</head>
+
+
+<body>
+
+<h1 align="middle">CS 184: Computer Graphics and Imaging, Spring 2020</h1>
+<h1 align="middle">Project 2: Mesh Editor</h1>
+<h2 align="middle">HENRY ZHANG, CS184-ACV</h2>
+
+<br><br>
+
+<div>
+
+<h2 align="middle">Overview</h2>
+<p>
+    In this project, we implemented a mesh editor capable of rendering Bezier curves and surfaces, as well as performing mesh operations such as flips, splits, and subdivision. 
+    We learned how to manipulate meshes represented by half-edge data structures, and learned what is necesssary to do so without violating the mesh's manifold property or otherwise 
+    breaking it.
+</p>
+
+<h2 align="middle">Section I: Bezier Curves and Surfaces</h2>
+
+<h3 align="middle">Part 1: Bezier curves with 1D de Casteljau subdivision</h3>
+
+<p>
+    In Part 1, we implemented de Casteljau's algorithm to evaluate 1-dimensional Bezier curves. Given a set of points and a parameter t in the range [0,1], de Casteljau's 
+    algorithm draws line segments between the initial points, and then recursively divides them according to t (e.g. a parameter of 0.5 would correspond to a subdivision at 
+    the midpoint of the line segment) and connects the newly-marked points with line segments until a single point is found. A cubic Bezier curve is evaluated from three 
+    initial line segments, or four initial points. The more points that define the Bezier curve, the more recursive linear interpolation must be performed to find the point 
+    corresponding to t. This final point traces out the Bezier curve when evaluated over all values of t from 0 to 1. 
+</p>
+<p>
+    The function BezierCurve::evaluateStep() performs only one step of de Casteljau's algorithm; the recursive implementation is provided. The function takes a vector of
+    control points (stored as Vector2D objects) and returns a vector of intermediate points interpolated at t, which is a member variable of the BezierCurve object calling
+    the function. The function iterates through each point except the last, and pushes to the output vector the resulting point from interpolating the current and next point
+    in the input vector with parameter t. The result vector is 1 smaller than the input vector, unless the input vector only holds a single Vector2D (in which case the same 
+    vector is returned).
+</p>
+
+<div align="middle">
+  <table style="width=100%">
+    <tr>
+      <td>
+        <img src="images/p1-1.png" align="middle" width="400px"/>
+        <figcaption align="middle">6-point Bezier curve, stage 1.</figcaption>
+      </td>
+      <td>
+        <img src="images/p1-2.png" align="middle" width="400px"/>
+        <figcaption align="middle">6-point Bezier curve, stage 2.</figcaption>
+      </td>
+    </tr>
+    <br>
+    <tr>
+      <td>
+        <img src="images/p1-3.png" align="middle" width="400px"/>
+        <figcaption align="middle">6-point Bezier curve, stage 3.</figcaption>
+      </td>
+      <td>
+        <img src="images/p1-4.png" align="middle" width="400px"/>
+        <figcaption align="middle">6-point Bezier curve, stage 4.</figcaption>
+      </td>
+    </tr>
+  </table>
+</div>
+
+<div align="middle">
+    <table style="width=100%">
+        <tr>
+            <td>
+                <img src="images/p1-5.png" align="middle" width="400px" />
+                <figcaption align="middle">6-point Bezier curve, stage 5.</figcaption>
+            </td>
+            <td>
+                <img src="images/p1-6.png" align="middle" width="400px" />
+                <figcaption align="middle">6-point Bezier curve complete.</figcaption>
+            </td>
+        </tr>
+    </table>
+</div>
+
+<img src="images/p1-7.png" align="middle"/>
+<figcaption align="middle">Another 6-point Bezier curve.</figcaption>
+
+
+<h3 align="middle">Part 2: Bezier surfaces with separable 1D de Casteljau subdivision</h3>
+
+<p>
+    If given an nxn 2D grid of control points, de Casteljau's algorithm can be used to evaluate a Bezier surface by performing the 1D evaluation twice. 
+    The points along one dimension each are control points that evaluate to n 1D Bezier curves. Corresponding points on these n curves can then be used 
+    as control points to sweep out a Bezier curve that "moves" along the curves and defines the surface.
+</p>
+<p>
+    To implement Bezier surfaces, we first wrote BezierPatch::evaluateStep() to perform the same function as BezierCurve::evaluateStep(), but with Vector3D 
+    objects instead of Vector2D objects. BezierPatch::evaluate1D() takes a set of control points and parameter value t and repeatedly performs 1D de Casteljau 
+    on the control points until one point results. BezierPatch::evaluate() takes a grid of control points and parameters u and v (similar to t, in the range 0 
+    to 1) and calls BezierPatch::evaluate1D() twice to find the point on the Bezier patch defined by the points at the given parameters. This function is called 
+    within meshedit over all values of (u,v) to sweep out the Bezier patch.
+</p>
+
+<img src="images/p2.png" align="middle" />
+<figcaption align="middle">teapot.bez drawn using Bezier surfaces.</figcaption>
+
+<h2 align="middle">Section II: Sampling</h2>
+
+<h3 align="middle">Part 3: Average normals for half-edge meshes</h3>
+
+<p>
+    Vertex::normal() is a function that takes no input and returns a unit normal vector formed as a weighted average of the normal vectors of the faces incident 
+    to that vertex. The vectors are weighted according to the area of the face they are normal to, and the sum of the weighted vectors is normalized to a unit 
+    vector before it is returned.
+</p>
+<p>
+    The function must traverse the half-edge mesh to calculate normal vectors and areas for all triangles incident to the vertex <b>v</b>. A HalfEdgeCIter <b>h</b> is 
+    initialized at v->halfedge(), which points to one of the half-edges leading away from the vertex. For each triangle, the positions of the vertices of the half-edges 
+    <i>h</i>, <i>h->next()</i>, and <i>h->next()->next()</i> are stored in a vector. The function then takes differences between these positions to calculate two 
+    3D vectors that define that triangle. The area of the triangle is calculated by finding half the magnitude of the cross product of the vectors, and the normal 
+    vector to the face is given by Face::normal(). The product of the normal vector and the area is added to a vector object that is initially zero. The pointer h 
+    is then set to h->twin()->next(), which lies inside an adjacent triangle also incident to the vertex. The process is repeated until h is once again equal to 
+    v->halfedge(), at which point the traversal has completed and all triangles have been calculated into the weighted sum. The weighted sum is then normalized and returned.
+</p>
+
+<div align="middle">
+    <table style="width=100%">
+        <tr>
+            <td>
+                <img src="images/p3-1.png" align="middle" width="400px" />
+                <figcaption align="middle">teapot.dae without vertex normals.</figcaption>
+            </td>
+            <td>
+                <img src="images/p3-2.png" align="middle" width="400px" />
+                <figcaption align="middle">teapot.dae with vertex normals.</figcaption>
+            </td>
+        </tr>
+    </table>
+</div>
+
+<h3 align="middle">Part 4: Half-edge flip</h3>
+
+<p>
+    Edge flipping and splitting are remeshing operations that boil down to resetting a large number of pointers. As suggested, to implement edge flipping, I first drew
+    a diagram of a two-triangle mesh before and after flipping an edge, and wrote down all half-edges, edges, vertices, and faces. The guide at 
+    http://15462.courses.cs.cmu.edu/fall2015content/misc/HalfedgeEdgeOpImplementationGuide.pdf was very helpful in this regard. 
+</p>
+<p>
+    I then collected all relevant half-edge/edge/vertex/face objects and used the diagram to determine how to reassign pointers for each element using Halfedge::setNeighbors()
+    and manually changing pointer values. Edge flipping neither creates nor deletes any mesh elements, and is never performed on boundary edges, which we check with Edge::isBoundary(). 
+    For each half-edge, the function reassigns next(), twin(), vertex(), edge() and face() pointers, while only halfedge() is reassigned for edges, vertices, and faces. Finally, the 
+    flipped edge is returned.
+</p>
+
+<div align="middle">
+    <table style="width=100%">
+        <tr>
+            <td>
+                <img src="images/p4-1.png" align="middle" width="400px" />
+                <figcaption align="middle">Mesh before flip.</figcaption>
+            </td>
+            <td>
+                <img src="images/p4-2.png" align="middle" width="400px" />
+                <figcaption align="middle">Mesh after flip. Flips can modify geometry noticeably.</figcaption>
+            </td>
+        </tr>
+    </table>
+</div>
+
+<h3 align="middle">Part 5: Half-edge split</h3>
+
+<p>
+    As for edge flipping, to implement edge splitting, I first drew a diagram of a two-triangle mesh before and after splitting an edge, and wrote down all half-edges, 
+    edges, vertices, and faces. I then used the diagram to determine how to reassign pointers for each element using Halfedge::setNeighbors() and manually changing pointer values. 
+    Splitting an edge creates one new vertex, two new faces, three new edges, and six new half-edges, all of which need to be initialized using the appropriate mesh function. 
+</p>
+<p>
+    Relevant existing objects are collected and new objects are initialized. The position of the new vertex formed by the split is the midpoint of the split edge. Other pointers for 
+    all elements are set according to the diagram, and the new vertex is returned.
+</p>
+
+<img src="images/p5-1.png" align="middle" />
+<figcaption align="middle">Mesh before modification.</figcaption>
+
+<img src="images/p5-2.png" align="middle" />
+<figcaption align="middle">Mesh after splits.</figcaption>
+
+<img src="images/p5-3.png" align="middle" />
+<figcaption align="middle">Mesh after splits and flips.</figcaption>
+
+<h3 align="middle">Part 6: Loop subdivision for mesh upsampling</h3>
+
+<p>
+    Loop subdivision is a method of upsampling a polygon mesh by subdividing its triangles and updating the vertex positions based on a weighting scheme. The result is a higher-resolution 
+    mesh with more polygons than the original. This function is implemented in three steps.
+</p>
+<p>
+    First, positions of new and old vertices are precomputed and stored in their corresponding mesh elements. Old vertices are vertices in the existing mesh, while new vertices are 
+    vertices formed in the middle of edges when they are split. Old and new vertices have different formulas to compute their new positions, which is a weighted combination of the 
+    vertices around them. The Edge and Vertex classes hold newPosition variables that can store this precomputed position for later use. We iterate through all Edge and Vertex objects in the 
+    original mesh to compute and store these positions.
+</p>
+<p>
+    Next, the function performs 4-1 subdivision over the entire mesh. To do this, the isNew property of all elements in the mesh is first set to <i>false</i>, and all old edges that 
+    connect two old vertices are split. By iterating from mesh.edgesBegin() to mesh.edgesEnd() and upholding this restriction, all edges of the original mesh are split without any of the 
+    newly-formed edges also being split. When an edge is split, the value of newPosition that was stored in that edge is copied to the value of newPosition for the newly-formed vertex. All 
+    new edges and vertices formed during this step have isNew set to true, except for edges that were originally part of old edges. The function iterates over the list of edges again and 
+    flips all new edges that connect an old and new vertex, completing the 4-1 subdivision.
+</p>
+<p>
+    Finally, the function iterates over the list of vertices, all of which now have defined values of newPosition, and sets the vertex's position to its newPosition. This completes the 
+    upsampling process.
+</p>
+
+<div align="middle">
+    <table style="width=100%">
+        <tr>
+            <td>
+                <img src="images/p6-1.png" align="middle" width="400px" />
+                <figcaption align="middle">teapot.dae with no subdivision.</figcaption>
+            </td>
+            <td>
+                <img src="images/p6-2.png" align="middle" width="400px" />
+                <figcaption align="middle">teapot.dae with 1 subdivision.</figcaption>
+            </td>
+        </tr>
+        <br />
+        <tr>
+            <td>
+                <img src="images/p6-3.png" align="middle" width="400px" />
+                <figcaption align="middle">teapot.dae with 2 subdivisions.</figcaption>
+            </td>
+            <td>
+                <img src="images/p6-4.png" align="middle" width="400px" />
+                <figcaption align="middle">teapot.dae with 3 subdivisions.</figcaption>
+            </td>
+        </tr>
+    </table>
+</div>
+
+<p>
+    After loop subdivision, sharp corners and edges tend to soften and become more rounded. This is because of how vertex positions are 
+    averaged when calculating new positions, causing vertices and edges to stick out less the more they are subdivided. Pre-splitting 
+    edges can reduce this by providing more definition to sharp corners, so that subdivisions generate smaller changes in the mesh.
+</p>
+
+<div align="middle">
+    <table style="width=100%">
+        <tr>
+            <td>
+                <img src="images/p6-5.png" align="middle" width="400px" />
+                <figcaption align="middle">cube.dae with no changes.</figcaption>
+            </td>
+            <td>
+                <img src="images/p6-6.png" align="middle" width="400px" />
+                <figcaption align="middle">Subdivided cube.dae is asymmetrical.</figcaption>
+            </td>
+        </tr>
+        <br />
+        <tr>
+            <td>
+                <img src="images/p6-7.png" align="middle" width="400px" />
+                <figcaption align="middle">cube.dae made symmetric.</figcaption>
+            </td>
+            <td>
+                <img src="images/p6-8.png" align="middle" width="400px" />
+                <figcaption align="middle">After subdivisions, the mesh is still symmetric.</figcaption>
+            </td>
+        </tr>
+    </table>
+</div>
+
+<p>
+    The mesh cube.dae is asymmetric after subdivisions because the original mesh is not symmetric despite appearing to be so. While the shape 
+    of the initial cube is symmetric, the vertices and edges around the cube have differing properties with regard to the number and direction of 
+    edges incident to them. The cube can be made symmetric after subdivision by making it symmetric before subdivision; this is done by splitting 
+    the diagonal edge on each square face. The resulting mesh is completely symmetric even over vertices and edges, and remains so after subdivision.
+</p>
+
+</body>
+</html>

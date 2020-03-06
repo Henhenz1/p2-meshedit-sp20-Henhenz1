@@ -1,0 +1,20 @@
+{
+  "version": "0.2.1",
+  "defaults": {},
+  "configurations": [
+    {
+      "type": "default",
+      "project": "src\\student_code.cpp",
+      "name": "student_code.cpp"
+    },
+    {
+      "type": "default",
+      "project": "CMakeLists.txt",
+      "projectTarget": "meshedit.exe",
+      "name": "meshedit.exe",
+      "args": [
+        "../../../dae/cube.dae"
+      ]
+    }
+  ]
+}
